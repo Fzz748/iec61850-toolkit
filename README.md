@@ -96,3 +96,9 @@ cargo test --locked --test cli real_xsd -- --ignored
 ```
 
 That test validates generated and edited models and checks that a schema-only error is rejected. Schema resources and external binaries retain their own licenses and are not part of the source distribution. The local verification cache is ignored by Git.
+
+## License
+
+Project-authored source code, the Agent Skill, documentation, examples, and templates are licensed under [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution. The standalone Skill folder includes copies of both files so they accompany the Skill when distributed separately.
+
+Third-party dependencies, IEC XSD/NSD resources, and vendor files retain their own licenses and notices. This license does not relicense user-provided project files.

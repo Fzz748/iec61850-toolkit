@@ -1,5 +1,6 @@
 ---
 name: iec61850
+license: Apache-2.0
 description: "Create, edit, inspect, validate, and compare IEC 61850 ICD/SCD/CID files with the iec61850 CLI. Use for offline SCL model engineering and GOOSE control-block configuration."
 ---
 
