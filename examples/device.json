@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "template": "minimal-ggio",
+  "ied_name": "DEMO",
+  "access_point": "AP1",
+  "ld_inst": "LD0",
+  "description": "Offline engineering example",
+  "signals": [
+    { "name": "Ind1", "kind": "sps", "description": "Example status" },
+    { "name": "AnIn1", "kind": "mv", "description": "Example measurement" }
+  ]
+}

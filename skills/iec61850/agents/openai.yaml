@@ -1,0 +1,3 @@
+interface:
+  display_name: "IEC 61850 Toolkit"
+  short_description: "Create, edit, and review SCL files with the CLI"

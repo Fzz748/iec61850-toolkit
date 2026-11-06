@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "operations": [
+    {
+      "op": "add_dataset",
+      "target": { "ied": "DEMO", "access_point": "AP1", "ld_inst": "LD0", "ln_class": "LLN0" },
+      "name": "dsStatus",
+      "members": [
+        { "ld_inst": "LD0", "ln_class": "GGIO", "ln_inst": "1", "do_name": "Ind1", "da_name": "stVal", "fc": "ST" },
+        { "ld_inst": "LD0", "ln_class": "GGIO", "ln_inst": "1", "do_name": "AnIn1", "da_name": "mag.f", "fc": "MX" }
+      ]
+    },
+    {
+      "op": "add_goose",
+      "target": { "ied": "DEMO", "access_point": "AP1", "ld_inst": "LD0", "ln_class": "LLN0" },
+      "name": "gcbStatus",
+      "dataset": "dsStatus",
+      "go_id": "DemoStatus"
+    }
+  ]
+}

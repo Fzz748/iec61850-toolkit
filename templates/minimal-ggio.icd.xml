@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL" version="2007" revision="B" release="4">
+  <Header id="{{IED}}" version="1" revision="0" toolID="iec61850-toolkit"/>
+  <IED name="{{IED}}" desc="{{DESCRIPTION}}" manufacturer="iec61850-toolkit" configVersion="1">
+    <AccessPoint name="{{AP}}">
+      <Server>
+        <Authentication/>
+        <LDevice inst="{{LD}}">
+          <LN0 lnClass="LLN0" inst="" lnType="TK_LLN0"/>
+          <LN lnClass="LPHD" inst="1" lnType="TK_LPHD"/>
+          <LN lnClass="GGIO" inst="1" lnType="TK_GGIO"/>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="TK_LLN0" lnClass="LLN0">
+      <DO name="Mod" type="TK_ENC"/>
+      <DO name="Beh" type="TK_ENS"/>
+      <DO name="Health" type="TK_HEALTH"/>
+      <DO name="NamPlt" type="TK_LPL"/>
+    </LNodeType>
+    <LNodeType id="TK_LPHD" lnClass="LPHD">
+      <DO name="PhyNam" type="TK_DPL"/>
+      <DO name="PhyHealth" type="TK_HEALTH"/>
+      <DO name="Proxy" type="TK_SPS"/>
+    </LNodeType>
+    <LNodeType id="TK_GGIO" lnClass="GGIO">
+      <DO name="Mod" type="TK_ENC"/>
+      <DO name="Beh" type="TK_ENS"/>
+      <DO name="Health" type="TK_HEALTH"/>
+      <DO name="NamPlt" type="TK_LPL"/>
+{{SIGNALS}}    </LNodeType>
+    <DOType id="TK_ENC" cdc="ENC">
+      <DA name="stVal" bType="Enum" type="TK_BEHAVIOR" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+      <DA name="ctlModel" bType="Enum" type="TK_CONTROL" fc="CF"><Val>status-only</Val></DA>
+    </DOType>
+    <DOType id="TK_ENS" cdc="ENS">
+      <DA name="stVal" bType="Enum" type="TK_BEHAVIOR" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="TK_HEALTH" cdc="ENS">
+      <DA name="stVal" bType="Enum" type="TK_HEALTH_STATE" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="TK_LPL" cdc="LPL">
+      <DA name="vendor" bType="VisString255" fc="DC"/>
+      <DA name="swRev" bType="VisString255" fc="DC"/>
+      <DA name="d" bType="VisString255" fc="DC"/>
+      <DA name="configRev" bType="VisString255" fc="DC"/>
+      <DA name="ldNs" bType="VisString255" fc="EX"/>
+    </DOType>
+    <DOType id="TK_DPL" cdc="DPL">
+      <DA name="vendor" bType="VisString255" fc="DC"/>
+      <DA name="hwRev" bType="VisString255" fc="DC"/>
+      <DA name="swRev" bType="VisString255" fc="DC"/>
+      <DA name="serNum" bType="VisString255" fc="DC"/>
+      <DA name="model" bType="VisString255" fc="DC"/>
+    </DOType>
+    <DOType id="TK_SPS" cdc="SPS">
+      <DA name="stVal" bType="BOOLEAN" fc="ST" dchg="true"/>
+      <DA name="q" bType="Quality" fc="ST" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="ST"/>
+    </DOType>
+    <DOType id="TK_MV" cdc="MV">
+      <DA name="mag" bType="Struct" type="TK_ANALOG" fc="MX" dchg="true"/>
+      <DA name="q" bType="Quality" fc="MX" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="MX"/>
+    </DOType>
+    <DAType id="TK_ANALOG"><BDA name="f" bType="FLOAT32"/></DAType>
+    <EnumType id="TK_BEHAVIOR">
+      <EnumVal ord="1">on</EnumVal><EnumVal ord="2">blocked</EnumVal><EnumVal ord="3">test</EnumVal><EnumVal ord="4">test/blocked</EnumVal><EnumVal ord="5">off</EnumVal>
+    </EnumType>
+    <EnumType id="TK_HEALTH_STATE"><EnumVal ord="1">Ok</EnumVal><EnumVal ord="2">Warning</EnumVal><EnumVal ord="3">Alarm</EnumVal></EnumType>
+    <EnumType id="TK_CONTROL"><EnumVal ord="0">status-only</EnumVal></EnumType>
+  </DataTypeTemplates>
+</SCL>
