@@ -3,6 +3,7 @@ pub mod app;
 pub mod cli;
 pub mod report;
 pub mod scl;
+pub mod simulation;
 
 use thiserror::Error;
 

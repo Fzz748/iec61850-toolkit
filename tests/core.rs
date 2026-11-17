@@ -181,13 +181,12 @@ fn replacement_never_silently_drops_dataset_extensions() {
         "<DataSet name=\"dsStatus\">",
         "<DataSet name=\"dsStatus\"><Private type=\"vendor\">keep</Private>",
     );
-    assert!(
-        edit::prepare(
-            &extended,
-            &patch(json!({"schema_version":1,"operations":[replacement()]}))
-        )
-        .is_err()
-    );
+    let edited = edit::prepare(
+        &extended,
+        &patch(json!({"schema_version":1,"operations":[replacement()]})),
+    )
+    .unwrap();
+    assert!(edited.contains("<Private type=\"vendor\">keep</Private>"));
 }
 
 #[test]
@@ -236,15 +235,10 @@ fn generation_escapes_input_and_does_not_expand_tokens_inside_user_text() {
 }
 
 #[test]
-fn rejects_dtd_wrong_namespace_encoding_and_unsupported_edit_profile() {
+fn rejects_dtd_wrong_namespace_and_misdeclared_encoding() {
     assert!(SclDocument::parse("<!DOCTYPE SCL [<!ENTITY x 'bad'>]><SCL xmlns='http://www.iec.ch/61850/2003/SCL'>&x;</SCL>").is_err());
     assert!(SclDocument::parse("<SCL xmlns='urn:wrong'/>").is_err());
     assert!(SclDocument::parse(&source().replace("UTF-8", "UTF-16")).is_err());
-    let old = source().replace("release=\"4\"", "release=\"5\"");
-    let request = patch(
-        json!({"schema_version":1,"operations":[{"op":"set_description","target":target(),"description":"x"}]}),
-    );
-    assert!(edit::prepare(&old, &request).is_err());
 }
 
 #[test]
@@ -270,32 +264,30 @@ fn adding_node_uses_existing_type_and_removing_unused_dataset_is_supported() {
 }
 
 #[test]
-fn generation_rejects_names_outside_the_supported_schema_profile() {
-    for (field, value) in [
-        ("ied_name", "_Bad"),
-        ("ied_name", "None"),
-        (
-            "access_point",
-            "AccessPointNameThatIsLongerThan32Characters",
-        ),
-        ("ld_inst", "_Bad"),
-    ] {
+fn generation_preserves_explicit_names_and_rejects_empty_identifiers() {
+    for field in ["ied_name", "access_point", "ld_inst"] {
         let mut spec: Value =
             serde_json::from_str(include_str!("../examples/device.json")).unwrap();
-        spec[field] = json!(value);
+        spec[field] = json!("");
         assert!(generate::create(&serde_json::from_value(spec).unwrap()).is_err());
     }
     let mut spec: DeviceSpec =
         serde_json::from_str(include_str!("../examples/device.json")).unwrap();
-    spec.signals[0].name = "Ind1234567890123".into();
+    spec.signals[0].name = "BusinessStatusWithAnExplicitLongName".into();
+    assert!(
+        generate::create(&spec)
+            .unwrap()
+            .contains("BusinessStatusWithAnExplicitLongName")
+    );
+    spec.signals[0].name = "Mod".into();
     assert!(generate::create(&spec).is_err());
-    spec.signals[0].name = "Ind1".into();
+    spec.signals.clear();
     spec.ld_inst = "0".into();
     assert!(generate::create(&spec).is_ok());
 }
 
 #[test]
-fn replacement_rejects_namespaced_attributes_and_unknown_text() {
+fn replacement_preserves_namespaced_attributes_and_unknown_text() {
     let source = with_goose().replace("<SCL ", "<SCL xmlns:v=\"urn:vendor\" ");
     for modified in [
         source.replace(
@@ -307,12 +299,18 @@ fn replacement_rejects_namespaced_attributes_and_unknown_text() {
             "<DataSet name=\"dsStatus\">keep this text",
         ),
     ] {
-        assert!(
-            edit::prepare(
-                &modified,
-                &patch(json!({"schema_version":1,"operations":[replacement()]}))
-            )
-            .is_err()
+        let edited = edit::prepare(
+            &modified,
+            &patch(json!({"schema_version":1,"operations":[replacement()]})),
+        )
+        .unwrap();
+        assert_eq!(
+            edited.contains("v:name=\"keep\""),
+            modified.contains("v:name=\"keep\"")
+        );
+        assert_eq!(
+            edited.contains("keep this text"),
+            modified.contains("keep this text")
         );
     }
 }

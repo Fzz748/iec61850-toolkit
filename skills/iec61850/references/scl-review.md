@@ -27,11 +27,11 @@ Reference checks plus a user/project-supplied matching schema:
 iec61850 scl validate device.icd --xsd /path/to/SCL2007B4/SCL.xsd --xmllint /path/to/xmllint --xsd-timeout 10 --json
 ```
 
-Use actual local paths, including the schema's includes/imports. Do not obtain or install a schema merely because a file extension suggests a particular edition. Check the document's `version`, `revision`, and `release`; the adapter checks the XSD root's version and namespace. There is no automatic conversion between editions.
+Use actual local paths, including the schema's includes/imports. Select the intended schema using the document's `version`, `revision`, and `release`, rather than its file extension. The schema engine checks actual declarations; descriptive schema labels may include dates such as `2007B.2014-01-22`. There is no automatic edition conversion or editing version whitelist.
 
 The implemented reference checks cover type links/cycles, LN identities, explicit non-array FCDA paths, and local control-block/DataSet references. They do not check full NSD/CDC requirements, ExtRef bindings, network engineering, or firmware behavior. Some valid but unsupported reference forms are rejected by this bounded checker; quote the diagnostic and scope rather than claiming a standards violation without evidence.
 
-For each issue, include the rule code, location/object path, evidence from the CLI, and the implication. Distinguish a failed check from one that could not run. `--references-only` can return `pass` with `xsd: not_run` because XSD was excluded. Without either validation option, the current CLI returns `incomplete`; this is not successful full validation.
+For each issue, include the rule code, location/object path, evidence from the CLI, and the implication. Distinguish a failed check from one that could not run. Default validation and `--references-only` can return `pass` with `xsd: not_run` because XSD was not requested. Ordinary editing checks XML and operation prerequisites only; do not describe its success as full model validation.
 
 A read-only review does not automatically authorize applying suggested fixes.
 

@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scl": "device.icd",
+  "ied": "DEMO",
+  "access_point": "AP1",
+  "mms": { "listen": "127.0.0.1", "port": 8102 },
+  "initial": [
+    { "reference": "DEMOLD0/GGIO1.Ind1.stVal", "value": false },
+    { "reference": "DEMOLD0/GGIO1.AnIn1.mag.f", "value": 10.0 }
+  ],
+  "timeline": [
+    { "at_ms": 1000, "values": [
+      { "reference": "DEMOLD0/GGIO1.Ind1.stVal", "value": true },
+      { "reference": "DEMOLD0/GGIO1.AnIn1.mag.f", "value": 25.5 }
+    ] }
+  ]
+}

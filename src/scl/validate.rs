@@ -65,11 +65,11 @@ fn check_cycle(
     let Some(node) = index.get(key).copied() else {
         return;
     };
-    if active.contains(key) || active.len() >= 128 {
+    if active.contains(key) {
         errors.push(diagnostic(
             node,
             "SCL_TYPE_CYCLE",
-            "recursive type reference or type depth exceeds 128",
+            "recursive type reference",
         ));
         return;
     }
@@ -144,7 +144,17 @@ fn check_fcda(
             .ok_or("FCDA SDO type is unresolved")?;
     }
     if let Some(da_name) = member.da_name {
-        let mut parts = da_name.split('.');
+        let mut parts = da_name.split('.').peekable();
+        // Some SCL producers put the SDO suffix in daName. Resolve the actual
+        // object tree rather than assuming the doName/daName split is canonical.
+        while let Some(part) = parts.peek().copied() {
+            let Some(sdo) = named(object_type, "SDO", part) else {
+                break;
+            };
+            object_type = resolve_type(index, "DOType", sdo.attribute("type").unwrap_or(""))
+                .ok_or("FCDA SDO type is unresolved")?;
+            parts.next();
+        }
         let mut attribute = named(object_type, "DA", parts.next().unwrap_or(""))
             .ok_or("FCDA data attribute does not exist")?;
         if attribute.attribute("fc") != Some(member.fc.as_str()) {
@@ -178,7 +188,7 @@ fn contains_fc(
     visited: &mut BTreeSet<String>,
 ) -> bool {
     let id = node.attribute("id").unwrap_or("").to_string();
-    if visited.len() >= 128 || !visited.insert(id) {
+    if !visited.insert(id) {
         return false;
     }
     children(node, "DA").any(|n| n.attribute("fc") == Some(fc))

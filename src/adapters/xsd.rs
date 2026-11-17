@@ -1,7 +1,7 @@
 use crate::{
     Result,
     report::{Check, Status},
-    scl::{SclDocument, document::SCL_NS},
+    scl::SclDocument,
 };
 use std::{
     io::{Read, Write},
@@ -30,38 +30,8 @@ pub fn validate(
         Ok(p) => p,
         Err(e) => return Ok(not_run(format!("cannot open schema: {e}"))),
     };
-    let mut schema_text = String::new();
-    let schema_file = std::fs::File::open(&schema)?;
-    if let Err(e) = schema_file
-        .take(super::super::scl::document::MAX_BYTES as u64 + 1)
-        .read_to_string(&mut schema_text)
-    {
-        return Ok(not_run(format!("cannot read UTF-8 schema: {e}")));
-    }
-    if schema_text.len() > super::super::scl::document::MAX_BYTES {
-        return Ok(not_run("schema exceeds the input limit"));
-    }
-    let schema_doc = match roxmltree::Document::parse(&schema_text) {
-        Ok(d) => d,
-        Err(e) => return Ok(not_run(format!("invalid schema XML: {e}"))),
-    };
-    let root = doc.xml.root_element();
-    let profile = format!(
-        "{}{}{}",
-        root.attribute("version").unwrap_or(""),
-        root.attribute("revision").unwrap_or(""),
-        root.attribute("release").unwrap_or("")
-    );
-    let schema_root = schema_doc.root_element();
-    if schema_root.tag_name().name() != "schema"
-        || schema_root.tag_name().namespace() != Some("http://www.w3.org/2001/XMLSchema")
-        || schema_root.attribute("targetNamespace") != Some(SCL_NS)
-        || schema_root.attribute("version") != Some(profile.as_str())
-    {
-        return Ok(not_run(format!(
-            "schema must declare the SCL targetNamespace and version={profile:?}"
-        )));
-    }
+    // Schema version strings are descriptive (some include publication dates).
+    // Let the XSD engine check the actual declarations instead of comparing labels.
     let mut input = tempfile::NamedTempFile::new()?;
     input.write_all(doc.source.as_bytes())?;
     input.flush()?;
@@ -97,8 +67,7 @@ pub fn validate(
             match stderr.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let keep = n.min(65536usize.saturating_sub(output.len()));
-                    output.extend_from_slice(&buffer[..keep]);
+                    output.extend_from_slice(&buffer[..n]);
                 }
             }
         }

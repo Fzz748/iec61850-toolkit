@@ -45,7 +45,46 @@ fn capabilities_are_machine_readable() {
     assert!(result.status.success());
     let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(value["schema_version"], 1);
-    assert_eq!(value["data"]["edit_profile"], "2007B4");
+    assert_eq!(value["data"]["version_whitelist"], false);
+}
+
+#[test]
+fn ordinary_edit_can_save_a_draft_with_unrelated_validation_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let draft = fs::read_to_string(&input)
+        .unwrap()
+        .replace(" release=\"4\"", "")
+        .replace("lnType=\"TK_LPHD\"", "lnType=\"missing\"");
+    fs::write(&input, &draft).unwrap();
+    let request = dir.path().join("edit.json");
+    fs::write(&request,serde_json::to_vec(&json!({"schema_version":1,"operations":[{"op":"set_description","target":{"ied":"DEMO","access_point":"AP1","ld_inst":"LD0","ln_class":"LLN0"},"description":"draft edit"}]})).unwrap()).unwrap();
+    let output = dir.path().join("updated.icd");
+    let (code, report) = run(&[
+        "scl",
+        "edit",
+        input.to_str().unwrap(),
+        "--patch",
+        request.to_str().unwrap(),
+        "-o",
+        output.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["data"]["written"], true);
+    assert_eq!(fs::read_to_string(&input).unwrap(), draft);
+    let checked = dir.path().join("checked.icd");
+    let (code, report) = run(&[
+        "scl",
+        "edit",
+        input.to_str().unwrap(),
+        "--patch",
+        request.to_str().unwrap(),
+        "-o",
+        checked.to_str().unwrap(),
+        "--references-only",
+    ]);
+    assert_eq!(code, 1, "{report}");
+    assert!(!checked.exists());
 }
 
 #[test]
@@ -199,14 +238,15 @@ fn existing_output_and_original_paths_are_never_overwritten() {
 }
 
 #[test]
-fn missing_schema_is_incomplete_and_mutation_does_not_write() {
+fn default_validation_checks_references_and_default_edit_does_not_require_xsd() {
     let dir = tempfile::tempdir().unwrap();
     let original = fixture(dir.path());
     let patch = goose_patch(dir.path());
     let output = dir.path().join("result.icd");
     let (code, report) = run(&["scl", "validate", original.to_str().unwrap()]);
-    assert_eq!(code, 3);
-    assert_eq!(report["status"], "incomplete");
+    assert_eq!(code, 0);
+    assert_eq!(report["status"], "pass");
+    assert_eq!(report["scope"], "xml_and_supported_references");
     assert_eq!(report["checks"][2]["status"], "not_run");
     let (code, _) = run(&[
         "scl",
@@ -217,8 +257,8 @@ fn missing_schema_is_incomplete_and_mutation_does_not_write() {
         "-o",
         output.to_str().unwrap(),
     ]);
-    assert_eq!(code, 3);
-    assert!(!output.exists());
+    assert_eq!(code, 0);
+    assert!(output.exists());
 }
 
 #[test]
@@ -347,4 +387,28 @@ fn real_xsd_accepts_create_and_edit_and_rejects_schema_only_errors() {
     assert_eq!(code, 1, "{report}");
     assert_eq!(report["checks"][1]["status"], "pass");
     assert_eq!(report["checks"][2]["status"], "fail");
+}
+
+#[test]
+#[ignore = "requires IEC61850_TEST_LEGACY_XSD and IEC61850_TEST_XMLLINT"]
+fn real_legacy_xsd_accepts_dated_schema_metadata() {
+    let schema = std::env::var("IEC61850_TEST_LEGACY_XSD").expect("set IEC61850_TEST_LEGACY_XSD");
+    let xmllint = std::env::var("IEC61850_TEST_XMLLINT").expect("set IEC61850_TEST_XMLLINT");
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let legacy = fs::read_to_string(&input)
+        .unwrap()
+        .replace(" release=\"4\"", "");
+    fs::write(&input, legacy).unwrap();
+    let (code, report) = run(&[
+        "scl",
+        "validate",
+        input.to_str().unwrap(),
+        "--xsd",
+        &schema,
+        "--xmllint",
+        &xmllint,
+    ]);
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["checks"][2]["status"], "pass");
 }

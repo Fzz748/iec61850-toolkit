@@ -1,4 +1,4 @@
-use super::{document::identifier, edit::escape};
+use super::edit::escape;
 use crate::{Error, Result};
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -38,47 +38,21 @@ pub fn create(spec: &DeviceSpec) -> Result<String> {
             "device spec requires schema_version=1 and template=minimal-ggio".into(),
         ));
     }
-    for value in [&spec.ied_name, &spec.access_point] {
-        if !identifier(value) {
-            return Err(Error::Input(format!("invalid device identifier {value:?}")));
+    for value in [&spec.ied_name, &spec.access_point, &spec.ld_inst] {
+        if value.is_empty() {
+            return Err(Error::Input("device identifiers must not be empty".into()));
         }
     }
-    if spec.ied_name == "None" || spec.access_point.len() > 32 {
-        return Err(Error::Input(
-            "IED name None is reserved; AccessPoint names are limited to 32 characters".into(),
-        ));
-    }
-    if spec.ld_inst.is_empty()
-        || spec.ld_inst.len() > 64
-        || !spec
-            .ld_inst
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_alphanumeric())
-        || !spec
-            .ld_inst
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-    {
-        return Err(Error::Input("ld_inst requires 1..64 ASCII alphanumeric/underscore characters with an alphanumeric first character".into()));
-    }
-    if spec.signals.is_empty() || spec.signals.len() > 1024 {
-        return Err(Error::Input("provide 1..1024 signals".into()));
-    }
-    let mut seen = BTreeSet::new();
+    let mut seen: BTreeSet<&str> = ["Mod", "Beh", "Health", "NamPlt"].into_iter().collect();
     let mut signals = String::new();
     for signal in &spec.signals {
-        let (prefix, type_id) = match signal.kind {
-            SignalKind::Sps => ("Ind", "TK_SPS"),
-            SignalKind::Mv => ("AnIn", "TK_MV"),
+        let type_id = match signal.kind {
+            SignalKind::Sps => "TK_SPS",
+            SignalKind::Mv => "TK_MV",
         };
-        if !signal.name.strip_prefix(prefix).is_some_and(|n| {
-            !n.is_empty() && !n.starts_with('0') && n.bytes().all(|b| b.is_ascii_digit())
-        }) || signal.name.len() > 12
-            || !seen.insert(&signal.name)
-        {
+        if signal.name.is_empty() || !seen.insert(&signal.name) {
             return Err(Error::Input(format!(
-                "signal {:?} must be a unique {prefix}<positive integer>, at most 12 characters",
+                "signal {:?} must have a nonempty name distinct from existing template objects",
                 signal.name
             )));
         }

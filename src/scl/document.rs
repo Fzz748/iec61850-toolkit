@@ -3,7 +3,6 @@ use roxmltree::{Document, Node, ParsingOptions};
 use sha2::{Digest, Sha256};
 
 pub const SCL_NS: &str = "http://www.iec.ch/61850/2003/SCL";
-pub const MAX_BYTES: usize = 32 * 1024 * 1024;
 
 /// Borrows the complete UTF-8 source: the parsed view is never used to reserialize it.
 pub struct SclDocument<'a> {
@@ -21,9 +20,6 @@ impl<'a> SclDocument<'a> {
     }
 
     pub fn parse(source: &'a str) -> Result<Self> {
-        if source.len() > MAX_BYTES {
-            return Err(Error::Input("SCL exceeds the 32 MiB input limit".into()));
-        }
         // A byte-preserving editor must not pretend that decoded text retains original offsets.
         let head = source.trim_start_matches('\u{feff}');
         if head.starts_with("<?xml") {
@@ -53,7 +49,6 @@ impl<'a> SclDocument<'a> {
             source,
             ParsingOptions {
                 allow_dtd: false,
-                nodes_limit: 1_000_000,
                 ..ParsingOptions::default()
             },
         )
@@ -63,24 +58,7 @@ impl<'a> SclDocument<'a> {
                 "expected SCL root in namespace {SCL_NS}"
             )));
         }
-        if xml
-            .descendants()
-            .any(|n| n.ancestors().take(130).count() > 128)
-        {
-            return Err(Error::Input("XML nesting exceeds 128 levels".into()));
-        }
         Ok(Self { source, xml })
-    }
-
-    pub fn require_edit_profile(&self) -> Result<()> {
-        let root = self.xml.root_element();
-        if root.attribute("version") != Some("2007")
-            || root.attribute("revision") != Some("B")
-            || root.attribute("release") != Some("4")
-        {
-            return Err(Error::Edit("editing requires version=2007, revision=B, release=4; other versions are inspect-only".into()));
-        }
-        Ok(())
     }
 
     pub fn digest(&self) -> String {
@@ -136,16 +114,4 @@ pub(crate) fn qname<'a>(doc: &'a SclDocument<'_>, node: Node<'_, '_>) -> &'a str
     tail.split(|c: char| c.is_whitespace() || c == '/' || c == '>')
         .next()
         .unwrap_or("")
-}
-
-pub(crate) fn identifier(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_alphabetic())
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }

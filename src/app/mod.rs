@@ -3,8 +3,9 @@ use crate::{
     adapters::xsd,
     cli::{Command, IcdCommand, OutputOptions, SclCommand, ValidationOptions},
     report::{Check, Report, Status},
-    scl::{SclDocument, diff, document::MAX_BYTES, edit, generate, query, validate},
+    scl::{SclDocument, diff, edit, generate, query, validate},
 };
+mod simulation;
 use serde_json::{Value, json};
 use std::{
     fs::File,
@@ -14,7 +15,8 @@ use std::{
 };
 
 pub fn read_text(path: &Path) -> Result<String> {
-    let file = File::open(path).map_err(|e| Error::Input(format!("{}: {e}", path.display())))?;
+    let mut file =
+        File::open(path).map_err(|e| Error::Input(format!("{}: {e}", path.display())))?;
     if !file.metadata()?.is_file() {
         return Err(Error::Input(format!(
             "{} is not a regular file",
@@ -22,13 +24,7 @@ pub fn read_text(path: &Path) -> Result<String> {
         )));
     }
     let mut bytes = Vec::new();
-    file.take(MAX_BYTES as u64 + 1).read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_BYTES {
-        return Err(Error::Input(format!(
-            "{} exceeds the 32 MiB input limit",
-            path.display()
-        )));
-    }
+    file.read_to_end(&mut bytes)?;
     String::from_utf8(bytes).map_err(|_| Error::Input(format!("{} is not UTF-8", path.display())))
 }
 
@@ -57,7 +53,7 @@ fn validate_into(
     doc: &SclDocument<'_>,
     options: &ValidationOptions,
 ) -> Result<()> {
-    report.scope = if options.references_only {
+    report.scope = if options.xsd.is_none() {
         "xml_and_supported_references"
     } else {
         "xml_supported_references_and_xsd"
@@ -81,18 +77,13 @@ fn validate_into(
         None => Check {
             name: "xsd".into(),
             status: Status::NotRun,
-            detail: if options.references_only {
-                "not requested (--references-only)"
-            } else {
-                "provide --xsd for schema validation or explicitly select --references-only"
-            }
-            .into(),
+            detail: "not requested; use --xsd for schema validation".into(),
         },
     };
     report.checks.push(xsd_check);
     report.status = if report.checks.iter().any(|c| c.status == Status::Fail) {
         Status::Fail
-    } else if !options.references_only && report.checks.iter().any(|c| c.status == Status::NotRun) {
+    } else if options.xsd.is_some() && report.checks.iter().any(|c| c.status == Status::NotRun) {
         Status::Incomplete
     } else {
         Status::Pass
@@ -110,7 +101,28 @@ fn finish_mutation(
     report.data["candidate_sha256"] = json!(doc.digest());
     report.data["dry_run"] = json!(options.dry_run);
     report.data["written"] = json!(false);
-    validate_into(&mut report, &doc, validation)?;
+    if validation.references_only || validation.xsd.is_some() {
+        validate_into(&mut report, &doc, validation)?;
+    } else {
+        report.scope = "xml_and_edit_preconditions".into();
+        report.checks = vec![
+            Check {
+                name: "xml".into(),
+                status: Status::Pass,
+                detail: "candidate XML parsed successfully; original schema labels retained".into(),
+            },
+            Check {
+                name: "references".into(),
+                status: Status::NotRun,
+                detail: "not requested; use scl validate or --references-only".into(),
+            },
+            Check {
+                name: "xsd".into(),
+                status: Status::NotRun,
+                detail: "not requested; use --xsd".into(),
+            },
+        ];
+    }
     if report.status == Status::Pass && !options.dry_run {
         let output = options
             .output
@@ -125,16 +137,22 @@ fn finish_mutation(
 
 pub fn run(command: &Command) -> Result<Report> {
     match command {
+        Command::Sim { .. }
+        | Command::Mms { .. }
+        | Command::Goose { .. }
+        | Command::Runtime { .. } => simulation::run(command),
         Command::Capabilities => Ok(Report::new(
             "capabilities",
             "tool",
             json!({
-                "commands": ["scl inspect", "scl validate", "scl diff", "scl edit", "icd create"],
-                "edit_profile": "2007B4", "encoding": "UTF-8 (optional BOM)", "maximum_input_bytes": MAX_BYTES,
+                "commands": ["scl inspect", "scl validate", "scl diff", "scl edit", "icd create", "sim check", "sim run", "mms browse", "mms read", "mms write", "goose subscribe", "runtime"],
+                "runtime": {"backend":"optional iec61850-runtime executable", "availability":"not_probed; run the runtime command", "protocol_version":2, "events":"optional JSONL file", "simulation":"MMS and/or selected GOOSE controls with scalar value timeline and explicit writable attributes"},
+                "edit_profile": "SCL namespace and operation structure", "encoding": "UTF-8 (optional BOM)", "maximum_input_bytes": null,
+                "version_whitelist": false, "mutation_validation_default": "XML and operation preconditions; reference/XSD checks are opt-in",
                 "templates": ["minimal-ggio"], "signal_kinds": ["sps", "mv"],
                 "operations": ["set_description", "add_logical_node", "add_dataset", "replace_dataset", "remove_dataset", "add_goose", "set_goose_dataset"],
                 "validation": {"built_in": "XML, type references/cycles, LN identities, explicit non-array FCDA paths, local control-block DataSet links", "xsd": "external xmllint with matching local schema", "not_implemented": ["NSD/CDC completeness", "ExtRef bindings", "network engineering", "device behavior"]},
-                "not_implemented": ["live networking", "packet capture analysis", "code generation", "general data-type editing", "automatic schema downloads"]
+                "not_implemented": ["MMS control/SBO/Operate client", "report subscription client", "packet capture analysis", "C code generation", "general data-type editing", "automatic schema downloads"]
             }),
         )),
         Command::Scl {

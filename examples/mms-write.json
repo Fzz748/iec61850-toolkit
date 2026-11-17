@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "scl": "mms-write.icd",
+  "ied": "DEMO",
+  "access_point": "AP1",
+  "mms": {
+    "listen": "127.0.0.1",
+    "port": 8102,
+    "writable": [
+      { "reference": "DEMOLD0/GGIO1.Setpoint.setMag.f", "fc": "SP" },
+      { "reference": "DEMOLD0/GGIO1.EnableSetting.setVal", "fc": "SP" },
+      { "reference": "DEMOLD0/GGIO1.CountSetting.setVal", "fc": "SP" },
+      { "reference": "DEMOLD0/GGIO1.NamPlt.vendor", "fc": "DC" }
+    ]
+  },
+  "initial": [
+    { "reference": "DEMOLD0/GGIO1.Setpoint.setMag.f", "value": 10.0 },
+    { "reference": "DEMOLD0/GGIO1.EnableSetting.setVal", "value": false },
+    { "reference": "DEMOLD0/GGIO1.CountSetting.setVal", "value": 1 },
+    { "reference": "DEMOLD0/GGIO1.NamPlt.vendor", "value": "Example device" }
+  ],
+  "timeline": []
+}

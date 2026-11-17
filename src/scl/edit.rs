@@ -1,5 +1,5 @@
 use super::{
-    document::{SclDocument, children, identifier, is, qname},
+    document::{SclDocument, children, is, qname},
     model::{Fcda, LnTarget, logical_nodes},
 };
 use crate::{Error, Result};
@@ -109,10 +109,8 @@ fn qualified(doc: &SclDocument<'_>, parent: Node<'_, '_>, name: &str) -> String 
 }
 
 fn check_name(name: &str) -> Result<()> {
-    if !identifier(name) || name.len() > 32 {
-        return Err(Error::Edit(format!(
-            "invalid control/DataSet name {name:?}; use 1..32 ASCII letters, digits, or underscores with a letter first"
-        )));
+    if name.is_empty() {
+        return Err(Error::Edit("name must not be empty".into()));
     }
     Ok(())
 }
@@ -146,24 +144,136 @@ fn dataset_fragment(
     members: &[Fcda],
 ) -> Result<String> {
     check_name(name)?;
-    if members.is_empty() || members.len() > 4096 {
-        return Err(Error::Edit(
-            "DataSet requires 1..4096 explicit FCDA members".into(),
-        ));
-    }
     let ds_tag = qualified(doc, parent, "DataSet");
-    let fcda_tag = qualified(doc, parent, "FCDA");
     let mut xml = format!("<{ds_tag} name=\"{}\">", escape(name));
     for member in members {
-        xml.push_str(&format!("<{fcda_tag} ldInst=\"{}\" prefix=\"{}\" lnClass=\"{}\" lnInst=\"{}\" doName=\"{}\" fc=\"{}\"",
-            escape(&member.ld_inst), escape(&member.prefix), escape(&member.ln_class), escape(&member.ln_inst), escape(&member.do_name), escape(&member.fc)));
-        if let Some(da) = &member.da_name {
-            xml.push_str(&format!(" daName=\"{}\"", escape(da)));
-        }
-        xml.push_str("/>");
+        xml.push_str(&member_fragment(doc, parent, member));
     }
     xml.push_str(&format!("</{ds_tag}>"));
     Ok(xml)
+}
+
+fn member_fragment(doc: &SclDocument<'_>, parent: Node<'_, '_>, member: &Fcda) -> String {
+    let tag = qualified(doc, parent, "FCDA");
+    let mut xml = format!(
+        "<{tag} ldInst=\"{}\" prefix=\"{}\" lnClass=\"{}\" lnInst=\"{}\" doName=\"{}\" fc=\"{}\"",
+        escape(&member.ld_inst),
+        escape(&member.prefix),
+        escape(&member.ln_class),
+        escape(&member.ln_inst),
+        escape(&member.do_name),
+        escape(&member.fc)
+    );
+    if let Some(da) = &member.da_name {
+        xml.push_str(&format!(" daName=\"{}\"", escape(da)));
+    }
+    xml.push_str("/>");
+    xml
+}
+
+fn apply_changes(source: &str, mut changes: Vec<(Range<usize>, String)>) -> Result<String> {
+    changes.sort_by_key(|change| std::cmp::Reverse(change.0.start));
+    let mut result = source.to_string();
+    let mut previous_start = result.len();
+    for (range, replacement) in changes {
+        if range.end > previous_start {
+            return Err(Error::Edit("overlapping XML changes".into()));
+        }
+        previous_start = range.start;
+        result.replace_range(range, &replacement);
+    }
+    Ok(result)
+}
+
+fn update_member(doc: &SclDocument<'_>, node: Node<'_, '_>, member: &Fcda) -> Result<String> {
+    let mut edits = Vec::new();
+    for (name, value) in [
+        ("ldInst", &member.ld_inst),
+        ("prefix", &member.prefix),
+        ("lnClass", &member.ln_class),
+        ("lnInst", &member.ln_inst),
+        ("doName", &member.do_name),
+        ("fc", &member.fc),
+    ] {
+        if node.attribute(name).unwrap_or("") != value {
+            edits.push(attr_change(doc, node, name, value));
+        }
+    }
+    match &member.da_name {
+        Some(value) if node.attribute("daName") != Some(value) => {
+            edits.push(attr_change(doc, node, "daName", value))
+        }
+        None => {
+            if let Some(attribute) = node.attribute_node("daName") {
+                edits.push((attribute.range(), String::new()));
+            }
+        }
+        _ => {}
+    }
+    let start = node.range().start;
+    let local = edits
+        .into_iter()
+        .map(|(r, v)| (r.start - start..r.end - start, v))
+        .collect();
+    apply_changes(&doc.source[node.range()], local)
+}
+
+fn replace_members(
+    doc: &SclDocument<'_>,
+    ds: Node<'_, '_>,
+    members: &[Fcda],
+) -> Result<Vec<(Range<usize>, String)>> {
+    let old: Vec<_> = children(ds, "FCDA").collect();
+    let mut used = vec![false; old.len()];
+    let mut assignments = Vec::new();
+    // Move exact matches intact, including unknown attributes and local namespaces.
+    for member in members {
+        let matched = old
+            .iter()
+            .enumerate()
+            .position(|(i, n)| !used[i] && Fcda::from_node(*n) == *member);
+        if let Some(i) = matched {
+            used[i] = true;
+        }
+        assignments.push(matched);
+    }
+    for slot in &mut assignments {
+        if slot.is_none() {
+            if let Some(i) = used.iter().position(|used| !used) {
+                used[i] = true;
+                *slot = Some(i);
+            }
+        }
+    }
+    let replacements: Vec<_> = members
+        .iter()
+        .zip(assignments)
+        .map(|(member, old_index)| match old_index {
+            Some(i) => update_member(doc, old[i], member),
+            None => Ok(member_fragment(doc, ds, member)),
+        })
+        .collect::<Result<_>>()?;
+    if old.is_empty() {
+        return Ok(vec![insert(doc, ds, &replacements.concat(), &[])]);
+    }
+    let mut edits: Vec<_> = old
+        .iter()
+        .enumerate()
+        .map(|(i, node)| {
+            (
+                node.range(),
+                replacements.get(i).cloned().unwrap_or_default(),
+            )
+        })
+        .collect();
+    if replacements.len() > old.len() {
+        edits
+            .last_mut()
+            .expect("nonempty old members")
+            .1
+            .push_str(&replacements[old.len()..].concat());
+    }
+    Ok(edits)
 }
 
 fn apply_one(doc: &SclDocument<'_>, operation: &Operation) -> Result<String> {
@@ -174,23 +284,28 @@ fn apply_one(doc: &SclDocument<'_>, operation: &Operation) -> Result<String> {
             description,
         } => changes.push(attr_change(doc, target.find(doc)?, "desc", description)),
         Operation::AddLogicalNode { target, ln_type } => {
-            if target.ln_class == "LLN0"
-                || target.ln_class.len() != 4
-                || !target
-                    .ln_class
-                    .bytes()
-                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-                || target.ln_inst.is_empty()
-                || target.ln_inst.len() > 12
-                || !target.ln_inst.bytes().all(|b| b.is_ascii_digit())
-                || target.prefix.len() > 11
-                || (!target.prefix.is_empty() && !identifier(&target.prefix))
+            if target.ln_class.is_empty() || target.ln_class == "LLN0" || target.ln_inst.is_empty()
             {
-                return Err(Error::Edit("new LN requires a four-character lnClass, numeric nonempty inst, and optional identifier prefix".into()));
+                return Err(Error::Edit(
+                    "add_logical_node requires an LN class and instance; LN0 is a separate element"
+                        .into(),
+                ));
             }
             if ln_type.is_empty() {
                 return Err(Error::Edit(
                     "ln_type must reference an existing nonempty type identifier".into(),
+                ));
+            }
+            let types: Vec<_> = children(doc.xml.root_element(), "DataTypeTemplates")
+                .flat_map(|section| children(section, "LNodeType"))
+                .filter(|node| node.attribute("id") == Some(ln_type))
+                .collect();
+            let [ln_type_node] = types.as_slice() else {
+                return Err(Error::Edit("LNodeType is missing or ambiguous".into()));
+            };
+            if ln_type_node.attribute("lnClass") != Some(&target.ln_class) {
+                return Err(Error::Edit(
+                    "new logical node class does not match its LNodeType".into(),
                 ));
             }
             if logical_nodes(doc)
@@ -267,39 +382,18 @@ fn apply_one(doc: &SclDocument<'_>, operation: &Operation) -> Result<String> {
             if old == *members {
                 return Ok(doc.source.into());
             }
-            // Replacing an element must never discard content the operation cannot represent.
-            if doc.source[ds.range()].contains("xmlns")
-                || ds.children().any(|n| {
-                    n.is_element() && !is(n, "FCDA")
-                        || n.is_comment()
-                        || n.is_pi()
-                        || n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty())
-                })
-                || ds
-                    .attributes()
-                    .any(|a| a.namespace().is_some() || a.name() != "name")
-                || children(ds, "FCDA").any(|n| {
-                    n.attributes().any(|a| {
-                        a.namespace().is_some()
-                            || ![
-                                "ldInst", "prefix", "lnClass", "lnInst", "doName", "daName", "fc",
-                            ]
-                            .contains(&a.name())
-                    }) || n.children().next().is_some()
-                })
-            {
-                return Err(Error::Edit("DataSet contains extensions, descriptions, comments, or unsupported FCDA content; replacement would discard it".into()));
-            }
             for cb in ln
                 .children()
                 .filter(|n| n.is_element() && n.attribute("datSet") == Some(name))
             {
-                if !is(cb, "GSEControl") {
-                    return Err(Error::Edit("replacement of a DataSet referenced by a non-GOOSE control is not supported".into()));
+                if ["GSEControl", "ReportControl", "SampledValueControl"]
+                    .iter()
+                    .any(|tag| is(cb, tag))
+                {
+                    changes.push(revision_change(doc, cb)?);
                 }
-                changes.push(revision_change(doc, cb)?);
             }
-            changes.push((ds.range(), dataset_fragment(doc, ln, name, members)?));
+            changes.extend(replace_members(doc, ds, members)?);
         }
         Operation::RemoveDataset { target, name } => {
             let ln = target.find(doc)?;
@@ -321,13 +415,8 @@ fn apply_one(doc: &SclDocument<'_>, operation: &Operation) -> Result<String> {
             go_id,
         } => {
             check_name(name)?;
-            if go_id.is_empty()
-                || go_id.len() > 129
-                || !go_id.bytes().all(|b| (0x20..=0x7e).contains(&b))
-            {
-                return Err(Error::Edit(
-                    "GOOSE go_id requires 1..129 printable ASCII characters".into(),
-                ));
+            if go_id.is_empty() {
+                return Err(Error::Edit("GOOSE go_id must not be empty".into()));
             }
             let ln = target.find(doc)?;
             if !is(ln, "LN0") {
@@ -365,27 +454,14 @@ fn apply_one(doc: &SclDocument<'_>, operation: &Operation) -> Result<String> {
             changes.push(revision_change(doc, cb)?);
         }
     }
-    changes.sort_by_key(|change| std::cmp::Reverse(change.0.start));
-    let mut result = doc.source.to_string();
-    let mut previous_start = result.len();
-    for (range, replacement) in changes {
-        if range.end > previous_start {
-            return Err(Error::Edit("overlapping XML changes".into()));
-        }
-        previous_start = range.start;
-        result.replace_range(range, &replacement);
-    }
-    Ok(result)
+    apply_changes(doc.source, changes)
 }
 
 pub fn prepare(source: &str, patch: &Patch) -> Result<String> {
-    if patch.schema_version != 1 || patch.operations.is_empty() || patch.operations.len() > 256 {
-        return Err(Error::Edit(
-            "patch requires schema_version=1 and 1..256 operations".into(),
-        ));
+    if patch.schema_version != 1 {
+        return Err(Error::Edit("patch requires schema_version=1".into()));
     }
     let doc = SclDocument::parse(source)?;
-    doc.require_edit_profile()?;
     if patch
         .source_sha256
         .as_ref()

@@ -1,10 +1,10 @@
 # Model creation and controlled editing
 
-Use these workflows after checking the CLI's capabilities. Commands below use `iec61850`; substitute the resolved executable/command prefix. The examples select reference-only validation. Replace that flag with the matching `--xsd PATH` options when required by the task.
+Use these workflows after checking the CLI's capabilities. Commands below use `iec61850`; substitute the resolved executable/command prefix. The examples explicitly request reference checks before saving. Omit that flag for ordinary draft editing, or replace it with the intended `--xsd PATH` options when schema validation is required.
 
 ## Create an ICD
 
-Establish the IED name, AccessPoint, logical-device instance, and explicit signal-to-template mappings. The current `minimal-ggio` template creates LLN0, LPHD1, and GGIO1. SPS signals use `Ind1`, `Ind2`, etc.; MV signals use `AnIn1`, `AnIn2`, etc. These are structural examples, not an assertion that a device implements the model.
+Establish the IED name, AccessPoint, logical-device instance, and explicit signal-to-template mappings. The bundled `minimal-ggio` template creates LLN0, LPHD1, and GGIO1. Signals have explicit names and SPS or MV types; the examples use `Ind1` and `AnIn1`. These are structural examples, not an assertion that a device implements the model.
 
 Save this complete example as `device.json`, adapting its explicit mappings to the user's requirements:
 
@@ -23,7 +23,7 @@ Save this complete example as `device.json`, adapting its explicit mappings to t
 }
 ```
 
-IED names start with an ASCII letter and are at most 64 characters; `None` is reserved. AccessPoint names use the same identifier subset with a 32-character limit. Logical-device instances allow an initial digit and are limited to 64 characters. Signal names are limited to 12 characters. Resolve unsupported model requests explicitly instead of silently converting them to this template.
+Preserve the names and mappings supplied by the user. Identifiers must be nonempty and signals distinct from existing template objects. Schema-specific naming rules belong to explicitly requested XSD validation. Resolve unsupported model requests explicitly instead of silently converting them to this template.
 
 ```sh
 iec61850 icd create --spec device.json --dry-run --references-only --json
@@ -34,7 +34,7 @@ Inspect the preview result before saving. If the preview fails, correct the spec
 
 ## Edit an existing document
 
-1. Run `iec61850 scl inspect device.icd --json`. Check `scl_version`, the actual logical-node target, and any relevant DataSet/control details. Editing currently requires SCL `2007B4`.
+1. Run `iec61850 scl inspect device.icd --json`. Check the actual logical-node target and relevant DataSet/control details. Retain `scl_version` for schema selection; there is no editing version whitelist or automatic edition conversion.
 2. Prepare a patch from supported operations. Add **`source_sha256` from the inspection's `data.source_sha256`** at the patch's top level. The example below omits that input-dependent value; populate it from the actual file before execution.
 3. Preview with `--dry-run`; inspect checks, diagnostics, and `data.changes`. Confirm that changed objects and DataSet member order match the request.
 4. Unless the user requested a review gate or preview only, execute the same patch/options to a new output path. Check `written` and compare the returned candidate hash to the preview. A hash-precondition failure requires re-inspection and reconsideration of the patch; do not remove the precondition to force the old patch through.
@@ -87,8 +87,8 @@ Every operation has `op` and `target`. The additional fields are:
 | `add_goose` | `name`, `dataset`, `go_id` | Add a GSEControl under LN0 |
 | `set_goose_dataset` | `name`, `dataset` | Change a GSEControl's local DataSet |
 
-Use 1–256 operations per patch. Unknown JSON fields fail. FCDA members require explicit `ld_inst`, `ln_class`, `do_name`, and `fc`; `prefix`/`ln_inst` default to empty and `da_name` is optional. Omitting `da_name` selects a whole data object with that FC. Dotted names traverse SDO/BDA structures, such as `mag.f`. Array-indexed and wildcard FCDA forms are outside the current checker’s scope.
+Operations run in order with no fixed count limit. Unknown JSON fields fail. FCDA members require explicit `ld_inst`, `ln_class`, `do_name`, and `fc`; `prefix`/`ln_inst` default to empty and `da_name` is optional. Omitting `da_name` selects a whole data object with that FC. Paths follow DO/SDO/DA/BDA structures, including SDO suffixes in `da_name` such as `phsA.cVal.mag.f`. Array-indexed and wildcard FCDA forms are not yet checked.
 
-DataSet/control names start with a letter and contain at most 32 ASCII identifier characters. New LN prefixes are at most 11 characters; instances contain 1–12 digits. `go_id` is 1–129 printable ASCII characters and maps to **GSEControl `appID`**, not the hexadecimal Ethernet APPID in Communication. MAC/VLAN/communication APPID and ExtRef binding edits are unavailable.
+Names must identify the intended objects unambiguously. `go_id` maps to **GSEControl `appID`**, not the hexadecimal Ethernet APPID in Communication. MAC/VLAN/communication APPID and ExtRef binding edits are unavailable.
 
-An actual DataSet replacement, including a reorder, increments each referencing local GSEControl's `confRev`; replacing identical members is a no-op. The CLI also increments `confRev` when changing the control's DataSet. Do not add a second manual increment. Overflow, unsupported non-GOOSE references, or replacement that would discard extensions/comments/descriptions causes rejection. Explain that restriction rather than stripping content to make the operation succeed.
+An actual DataSet replacement, including a reorder, increments `confRev` on referencing local GOOSE, Report, and SampledValue controls; replacing identical members is a no-op. The CLI also increments `confRev` when changing a GSEControl's DataSet. Do not add a second manual increment. Dataset metadata, comments, and extensions are retained. Existing unrelated validation issues do not prevent ordinary editing; explicitly requested checks can prevent saving when they fail.
